@@ -21,6 +21,7 @@ sub mk_stuff {
     };
 
     $self->mk_traits($helper, @args);
+    $self->mk_model($helper, @args);
     $self->mk_api($helper, @args);
     $self->mk_conf($helper, @args);
 }
@@ -32,12 +33,31 @@ sub mk_traits {
     my $app = $helper->{var}{namespace};
     $app =~ s/::/\//g;
     $helper->mk_dir(File::Spec->catfile($base, "lib/$app/Trait"));
+
+    $helper->mk_dir(File::Spec->catfile($base, "conf")); # conf
+    $helper->mk_dir(File::Spec->catfile($base, "logs"));
+    my $conf = File::Spec->catfile($base, "conf", 'log4perl.conf');
+    $conf .= '.new' if -e $conf;
+    $helper->render_file('log4perl', $conf, $helper->{var});
+
     for my $trait (qw/trait_WithAPI trait_WithDBIC trait_Log/) {
         my $name = $trait;
         $name =~ s/^trait_//;
         my $pm = File::Spec->catfile($base, "lib/$app/Trait", "$name.pm");
         $helper->render_file($trait, $pm, $helper->{var});
     }
+}
+
+sub mk_model {
+    my($self, $helper, @args) = @_;
+
+    my $base = $helper->{base};
+    my $app = $helper->{app};
+    $app =~ s/::/\//g;
+
+    my $pm = File::Spec->catfile($base, "lib/$app/Model", "API.pm");
+    $helper->mk_dir(File::Spec->catfile($base, "lib/$app/Model"));
+    $helper->render_file('model_api', $pm, $helper->{var});
 }
 
 sub mk_api {
@@ -50,6 +70,14 @@ sub mk_api {
     my $pm = File::Spec->catfile($base, "lib/$app", "API.pm");
     $helper->mk_dir(File::Spec->catfile($base, "lib/$app"));
     $helper->render_file('api', $pm, $helper->{var});
+
+    # TODO api layout
+    $helper->mk_dir(File::Spec->catfile($base, "lib/$app/API"));
+    for my $api (@args) {
+        $helper->{var}{api} = $api;
+        my $pm = File::Spec->catfile($base, "lib/$app/API", "$api.pm");
+        $helper->render_file('api_layout', $pm, $helper->{var});
+    }
 }
 
 sub mk_conf {
@@ -75,6 +103,25 @@ L<Catalyst::Helper>
 1;
 
 __DATA__
+
+__model_api__
+package [% app %]::Model::API;
+# ABSTRACT: use a plain API class as a Catalyst model
+use Moose;
+use namespace::autoclean;
+extends 'Catalyst::Model::Adaptor';
+
+=head1 DESCRIPTION
+
+L<Catalyst::Model::Adaptor> Model
+
+=head1 SEE ALSO
+
+L<[% app %]>, L<Catalyst::Model::Adaptor>
+
+=cut
+
+1;
 
 __api__
 package [% namespace %]::API;
@@ -105,36 +152,47 @@ sub _build_apis {
     return \%apis;
 }
 
+=head1 DESCRIPTION
+
+[% namespace %]::Schema class required
+
 1;
 
 __trait_Log__
-package [% namespace %]::Trait::WithAPI;
+package [% namespace %]::Trait::Log;
 # ABSTRACT: Log Trait for [% namespace %]::API Role
 use Moose::Role;
 use namespace::autoclean;
 
-has apis => (
-    is => 'rw',
-    isa => 'HashRef[Object]',
+has log => (
+    is => 'ro',
+    isa => 'Log::Log4perl::Logger',
     lazy_build => 1,
 );
 
-has opts => (
-    is => 'rw',
-    isa => 'HashRef',
-    default => sub { +{} }
-);
-
-sub find {
-    my ($self, $key) = @_;
-    my $api = $self->apis->{$key};
-    if (!$api) {
-        confess "API by key $key was not found for $self";
-    }
-    $api;
+sub _build_log {
+    my $self = shift;
+    Log::Log4perl::init('conf/log4perl.conf');
+    return Log::Log4perl->get_logger(__PACKAGE__);
 }
 
 no Moose::Role;
+
+=head1 SYNOPSIS
+
+    package [% namespace %]::API::Something;
+    use Moose;
+    with '[% namespace %]::Trait::Log';
+    sub foo {
+        my ($self) = shift;
+        $self->log->debug('message');
+    }
+
+=head1 DESCRIPTION
+
+Using Log4perl instance without Catalyst Context
+
+=cut
 
 1;
 
@@ -244,3 +302,55 @@ __conf__
         # </opts>
     </args>
 </Model>
+
+__api_layout__
+package [% namespace %]::API::[% api %];
+# ABSTRACT: [% namespace %]::API::[% api %]
+use utf8;
+use Moose;
+use 5.012;
+use namespace::autoclean;
+
+with qw/[% namespace %]::API::WithDBIC [% namespace %]::Trait::Log/;
+
+sub wtf {
+    my ($self, $arg) = @_;
+    # your stuff here
+    return 'World Taekwondo Federation';
+}
+
+__PACKAGE__->meta->make_immutable;
+
+=head1 SYNOPSIS
+
+    $c->model('API')->find('[% api %]')->foo('wtf');  ## 'World Taekwondo Federation'
+
+=head1 DESCRIPTION
+
+[% api %] description here
+
+=cut
+
+1;
+
+__log4perl__
+[% TAGS [- -] -%]
+#log4perl.logger = DEBUG, A1, MAILER, Screen
+log4perl.logger = DEBUG, A1, Screen
+log4perl.appender.A1 = Log::Log4perl::Appender::File
+log4perl.appender.A1.TZ = KST
+log4perl.appender.A1.layout = Log::Log4perl::Layout::PatternLayout
+log4perl.appender.A1.layout.ConversionPattern = [%d] [- app -] [%p] %m%n
+log4perl.appender.A1.utf8 = 1
+log4perl.appender.A1.filename = logs/debug.log
+
+log4perl.appender.MAILER = Log::Dispatch::Email::MailSend
+log4perl.appender.MAILER.to = ** YOUR EMAIL **
+log4perl.appender.MAILER.subject = [- app -] error mail
+log4perl.appender.MAILER.layout  = Log::Log4perl::Layout::PatternLayout
+log4perl.appender.MAILER.layout.ConversionPattern = %d{yyyy-MM-dd HH:mm:ss} %F(%L) %M [%p] %m %n
+log4perl.appender.MAILER.Threshold = ERROR
+
+log4perl.appender.Screen = Log::Log4perl::Appender::Screen
+log4perl.appender.Screen.layout = Log::Log4perl::Layout::PatternLayout
+log4perl.appender.Screen.layout.ConversionPattern = %d %m %n
