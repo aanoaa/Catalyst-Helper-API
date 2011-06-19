@@ -8,67 +8,54 @@ use File::Spec;
 sub mk_stuff {
     my($self, $helper, @args) = @_;
 
-    # Trait/WithAPI.pm
-    # Trait/WithDBIC.pm
-    # Trait/Log.pm
-    # API.pm
-    # myapp.conf
-
-    $self->mk_traits($helper, @args);
-    $self->mk_api($helper, @args);
-    $self->mk_conf($helper, @args);
-
-}
-
-sub mk_traits {
-    my($self, $helper, @args) = @_;
-    for my $trait (qw/trait_withapi trait_withdbic trait_log/) {
-        # do something
-    }
-}
-
-sub mk_api {
-    my($self, $helper, @args) = @_;
-    my $base = $helper->{base}; # 현재 디렉토리
+    my $base = $helper->{base}; # current directory
     my $app = $helper->{app};   # ex) Foo::Web
 
     $app =~ s/::www$//i;
     $app =~ s/::web$//ig;
-    $app =~ s/::/\//g;
 
-    my $pm = File::Spec->catfile($base, "lib/$app", "API.pm");
-
-    $app =~ s{/}{::}g;
-
-    my $var = {
+    $helper->{var} = {
         app         => $helper->{app},
         apis        => \@args || [],
         namespace   => $app,
     };
 
+    $self->mk_traits($helper, @args);
+    $self->mk_api($helper, @args);
+    $self->mk_conf($helper, @args);
+}
+
+sub mk_traits {
+    my($self, $helper, @args) = @_;
+
+    my $base = $helper->{base};
+    my $app = $helper->{var}{namespace};
+    $app =~ s/::/\//g;
+    $helper->mk_dir(File::Spec->catfile($base, "lib/$app/Trait"));
+    for my $trait (qw/trait_WithAPI trait_WithDBIC trait_Log/) {
+        my $name = $trait;
+        $name =~ s/^trait_//;
+        my $pm = File::Spec->catfile($base, "lib/$app/Trait", "$name.pm");
+        $helper->render_file($trait, $pm, $helper->{var});
+    }
+}
+
+sub mk_api {
+    my($self, $helper, @args) = @_;
+
+    my $base = $helper->{base};
+    my $app = $helper->{var}{namespace};
+    $app =~ s/::/\//g;
+
+    my $pm = File::Spec->catfile($base, "lib/$app", "API.pm");
     $helper->mk_dir(File::Spec->catfile($base, "lib/$app"));
-    $helper->render_file('api', $pm, $var);
+    $helper->render_file('api', $pm, $helper->{var});
 }
 
 sub mk_conf {
     my($self, $helper, @args) = @_;
 
-    my $conf = Catalyst::Utils::appprefix($helper->{app});
-    $helper->render_file('conf', "$conf.conf", $var);
-
-    # share 만들까? 필요없을 듯
-    my $template_conf = File::Spec->catfile( $dist_dir, 'myapp.conf' );
-    my $conf = Catalyst::Utils::appprefix($helper->{app}) . '.conf.new';
-    my $content = slurp $template_conf;
-    my $vars = {
-        lower_name => lc $helper->{name},
-        name => $helper->{name}
-    };
-    $helper->render_file_contents($content, $conf, $vars);
-    print "** please add below lines to your app conf\n";
-    print "# ==========================================\n";
-    print slurp $conf;
-    print "# ==========================================\n";
+    $helper->render_file('conf', Catalyst::Utils::appprefix($helper->{app}) . '.conf.new', $helper->{var});
 }
 
 =head1 SYNOPSIS
@@ -120,7 +107,7 @@ sub _build_apis {
 
 1;
 
-__trait_log__
+__trait_Log__
 package [% namespace %]::Trait::WithAPI;
 # ABSTRACT: Log Trait for [% namespace %]::API Role
 use Moose::Role;
@@ -151,7 +138,7 @@ no Moose::Role;
 
 1;
 
-__trait_withdbic__
+__trait_WithDBIC__
 package [% namespace %]::Trait::WithDBIC;
 # ABSTRACT: DBIC Trait for [% namespace %]::API Role
 use Moose::Role;
@@ -205,7 +192,7 @@ no Moose::Role;
 
 1;
 
-__trait_withapi__
+__trait_WithAPI__
 package [% namespace %]::Trait::WithAPI;
 # ABSTRACT: API Trait for [% namespace %]::API Role
 use Moose::Role;
@@ -241,19 +228,19 @@ __conf__
     class   [% namespace %]::API
     <args> # ARGS of Class Constructor
         <connect_info>
-            dsn                 **DSN** # dbi:mysql:t_best
-            user                **USERNAME**
-            password            **PASSWORD**
+            dsn                 ** DSN **           ## ex) dbi:mysql:test
+            user                ** USERNAME **
+            password            ** PASSWORD **
             RaiseError          1
             AutoCommit          1
             mysql_enable_utf8   1
-            on_connect_do       SET NAMES utf8
+            on_connect_do       SET NAMES utf8      ## shut the fuck up and using utf8
         </connect_info>
         # <opts>
-        #     <System>        # ARGS of [% namespace %]::API::System
-        #         key         value
-        #         key2        another value
-        #     </System>
+        #     <Module>        # ARGS of [% namespace %]::API::Module
+        #         arg1          this is arg1
+        #         arg2          this is arg2
+        #     </Module>
         # </opts>
     </args>
 </Model>
