@@ -30,33 +30,37 @@ sub mk_traits {
     my($self, $helper, @args) = @_;
 
     my $base = $helper->{base};
-    my $app = $helper->{var}{namespace};
-    $app =~ s/::/\//g;
-    $helper->mk_dir(File::Spec->catfile($base, "lib/$app/Trait"));
+    my $path = sprintf "%s/%s/%s", 'lib', $helper->{var}{namespace}, 'Trait';
+    $path =~ s/::/\//g;
 
-    $helper->mk_dir(File::Spec->catfile($base, "conf")); # conf
-    $helper->mk_dir(File::Spec->catfile($base, "logs"));
+    $helper->mk_dir(File::Spec->catfile($base, $path));     # BASE/lib/Foo/Web/Trait
+    $helper->mk_dir(File::Spec->catfile($base, 'conf'));    # BASE/conf
+    $helper->mk_dir(File::Spec->catfile($base, 'logs'));    # BASE/logs
+
+    for my $trait (qw/trait_WithAPI trait_WithDBIC trait_Log/) {
+        my $to = $trait;
+        $to =~ s/^trait_//;
+        $to .= '.pm';
+        my $pm = File::Spec->catfile($base, $path, $to);
+        $pm .= '.new' if -e $pm;
+        $helper->render_file($trait, $pm, $helper->{var});
+    }
+
     my $conf = File::Spec->catfile($base, "conf", 'log4perl.conf');
     $conf .= '.new' if -e $conf;
     $helper->render_file('log4perl', $conf, $helper->{var});
-
-    for my $trait (qw/trait_WithAPI trait_WithDBIC trait_Log/) {
-        my $name = $trait;
-        $name =~ s/^trait_//;
-        my $pm = File::Spec->catfile($base, "lib/$app/Trait", "$name.pm");
-        $helper->render_file($trait, $pm, $helper->{var});
-    }
 }
 
 sub mk_model {
     my($self, $helper, @args) = @_;
 
     my $base = $helper->{base};
-    my $app = $helper->{app};
-    $app =~ s/::/\//g;
+    my $path = sprintf "%s/%s/%s", 'lib', $helper->{app}, 'Model';
+    $path =~ s/::/\//g;
 
-    my $pm = File::Spec->catfile($base, "lib/$app/Model", "API.pm");
-    $helper->mk_dir(File::Spec->catfile($base, "lib/$app/Model"));
+    $helper->mk_dir(File::Spec->catfile($base, $path));
+    my $pm = File::Spec->catfile($base, $path, 'API.pm');
+    $pm .= '.new' if -e $pm;
     $helper->render_file('model_api', $pm, $helper->{var});
 }
 
@@ -64,18 +68,19 @@ sub mk_api {
     my($self, $helper, @args) = @_;
 
     my $base = $helper->{base};
-    my $app = $helper->{var}{namespace};
-    $app =~ s/::/\//g;
+    my $path = sprintf "%s/%s", 'lib', $helper->{var}{namespace};
+    $path =~ s/::/\//g;
 
-    my $pm = File::Spec->catfile($base, "lib/$app", "API.pm");
-    $helper->mk_dir(File::Spec->catfile($base, "lib/$app"));
+    $helper->mk_dir(File::Spec->catfile($base, $path));     # BASE/lib/Foo
+    $helper->mk_dir(File::Spec->catfile($base, $path, 'API'));     # BASE/lib/Foo/API
+
+    my $pm = File::Spec->catfile($base, $path, 'API.pm');
+    $pm .= '.new' if -e $pm;
     $helper->render_file('api', $pm, $helper->{var});
 
-    # TODO api layout
-    $helper->mk_dir(File::Spec->catfile($base, "lib/$app/API"));
     for my $api (@args) {
         $helper->{var}{api} = $api;
-        my $pm = File::Spec->catfile($base, "lib/$app/API", "$api.pm");
+        my $pm = File::Spec->catfile($base, "$path/API", "$api.pm");
         $helper->render_file('api_layout', $pm, $helper->{var});
     }
 }
