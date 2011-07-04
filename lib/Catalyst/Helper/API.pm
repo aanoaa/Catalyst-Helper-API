@@ -161,6 +161,8 @@ sub _build_apis {
 
 [% namespace %]::Schema class required
 
+=cut
+
 1;
 
 __trait_Log__
